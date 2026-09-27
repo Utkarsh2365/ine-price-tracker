@@ -1,216 +1,449 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const supabase = require("./config/supabase");
 
 dotenv.config();
 
-const app = express();
-
-const PORT = process.env.PORT || 5000;
+const supabase =
+    require("./config/supabase");
 
 const {
     scrapeAllTrackedProducts,
     scrapeTrackedProduct
 } = require("./scraper/scrapeRunner");
 
+const {
+    searchStoreProducts
+} = require("./store/storeSearch");
+
+
+const app =
+    express();
+
+
+const PORT =
+    process.env.PORT ||
+    5000;
+
 
 // =====================================================
 // MIDDLEWARE
 // =====================================================
 
-app.use(cors());
-app.use(express.json());
+app.use(
+    cors()
+);
+
+app.use(
+    express.json()
+);
 
 
 // =====================================================
-// ROOT ROUTE
+// ROOT
 // =====================================================
 
-app.get("/", (req, res) => {
+app.get(
+    "/",
+    (req, res) => {
 
-    res.json({
-        message: "INE Price Tracker Backend is running"
-    });
+        return res.json({
+            message:
+                "INE Price Tracker Backend is running"
+        });
 
-});
+    }
+);
 
 
 // =====================================================
-// HEALTH CHECK
+// HEALTH
 // =====================================================
 
-app.get("/health", (req, res) => {
+app.get(
+    "/health",
+    (req, res) => {
 
-    res.json({
-        status: "ok",
-        timestamp: new Date().toISOString()
-    });
+        return res.json({
 
-});
+            status:
+                "ok",
+
+            timestamp:
+                new Date()
+                    .toISOString()
+
+        });
+
+    }
+);
 
 
 // =====================================================
 // DATABASE TEST
 // =====================================================
 
-app.get("/db-test", async (req, res) => {
+app.get(
+    "/db-test",
+    async (req, res) => {
 
-    try {
+        try {
 
-        const { data, error } = await supabase
-            .from("tracked_products")
-            .select("*");
-
-        if (error) {
-            throw error;
-        }
-
-        return res.json({
-            message: "Supabase connected successfully",
-            trackedProducts: data
-        });
-
-    } catch (error) {
-
-        console.error("Supabase error:", error);
-
-        return res.status(500).json({
-            message: "Supabase connection failed",
-            error: error.message
-        });
-
-    }
-
-});
+            const {
+                data,
+                error
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*");
 
 
-// =====================================================
-// API: GET ALL TRACKED PRODUCTS
-// =====================================================
-
-app.get("/api/products", async (req, res) => {
-
-    try {
-
-        const {
-            data: products,
-            error: productsError
-        } = await supabase
-            .from("tracked_products")
-            .select("*");
-
-        if (productsError) {
-            throw productsError;
-        }
+            if (error) {
+                throw error;
+            }
 
 
-        const {
-            data: history,
-            error: historyError
-        } = await supabase
-            .from("scrape_history")
-            .select("*")
-            .eq("outcome", "success")
-            .order("attempted_at", {
-                ascending: false
+            return res.json({
+
+                message:
+                    "Supabase connected successfully",
+
+                trackedProducts:
+                    data
+
             });
 
-        if (historyError) {
-            throw historyError;
+
+        } catch (error) {
+
+            console.error(
+                "Supabase error:",
+                error
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Supabase connection failed",
+
+                    error:
+                        error.message
+
+                });
+
         }
 
+    }
+);
 
-        const latestScrapes = new Map();
 
-        for (const scrape of history) {
+// =====================================================
+// SEARCH INE STORE
+// =====================================================
+
+app.get(
+    "/api/store/search",
+    async (req, res) => {
+
+        try {
+
+            const query =
+                String(
+                    req.query.q ||
+                    ""
+                ).trim();
+
 
             if (
-                !latestScrapes.has(
-                    scrape.tracked_product_id
-                )
+                query.length < 2
             ) {
 
-                latestScrapes.set(
-                    scrape.tracked_product_id,
-                    scrape
-                );
+                return res
+                    .status(400)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "Enter at least 2 characters to search"
+
+                    });
 
             }
 
+
+            const searchResult =
+                await searchStoreProducts(
+                    query
+                );
+
+
+            const resultProducts =
+                Array.isArray(
+                    searchResult?.products
+                )
+                    ? searchResult.products
+                    : [];
+
+
+            return res.json({
+
+                success:
+                    true,
+
+                query,
+
+                count:
+                    resultProducts.length,
+
+                totalMatches:
+                    Number(
+                        searchResult
+                            ?.totalMatches
+                    ) ||
+                    resultProducts.length,
+
+                products:
+                    resultProducts
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "STORE SEARCH ERROR:",
+                error
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Unable to search the INE Store",
+
+                    error:
+                        error.message
+
+                });
+
         }
 
-
-        const result = products.map((product) => {
-
-            const latest =
-                latestScrapes.get(product.id);
-
-            return {
-
-                id: product.id,
-
-                storeProductId:
-                    product.store_product_id,
-
-                productName:
-                    product.product_name,
-
-                productUrl:
-                    product.product_url,
-
-                selectedOption:
-                    product.selected_option,
-
-                active:
-                    product.active,
-
-                latestPrice:
-                    latest
-                        ? latest.price
-                        : null,
-
-                latestStock:
-                    latest
-                        ? latest.stock
-                        : null,
-
-                lastScrapedAt:
-                    latest
-                        ? latest.attempted_at
-                        : null
-            };
-
-        });
-
-
-        return res.json({
-            success: true,
-            count: result.length,
-            products: result
-        });
-
-    } catch (error) {
-
-        console.error(
-            "GET PRODUCTS ERROR:",
-            error
-        );
-
-        return res.status(500).json({
-            success: false,
-            message:
-                "Failed to load tracked products",
-            error: error.message
-        });
-
     }
-
-});
+);
 
 
 // =====================================================
-// API: GET PRICE HISTORY
+// GET ALL TRACKED PRODUCTS
+// =====================================================
+
+app.get(
+    "/api/products",
+    async (req, res) => {
+
+        try {
+
+            const {
+                data:
+                    products,
+                error:
+                    productsError
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*");
+
+
+            if (
+                productsError
+            ) {
+                throw productsError;
+            }
+
+
+            const {
+                data:
+                    history,
+                error:
+                    historyError
+            } =
+                await supabase
+                    .from(
+                        "scrape_history"
+                    )
+                    .select("*")
+                    .eq(
+                        "outcome",
+                        "success"
+                    )
+                    .order(
+                        "attempted_at",
+                        {
+                            ascending:
+                                false
+                        }
+                    );
+
+
+            if (
+                historyError
+            ) {
+                throw historyError;
+            }
+
+
+            const latestScrapes =
+                new Map();
+
+
+            for (
+                const scrape
+                of history ||
+                []
+            ) {
+
+                if (
+                    !latestScrapes.has(
+                        scrape
+                            .tracked_product_id
+                    )
+                ) {
+
+                    latestScrapes.set(
+
+                        scrape
+                            .tracked_product_id,
+
+                        scrape
+
+                    );
+
+                }
+
+            }
+
+
+            const result =
+                (
+                    products ||
+                    []
+                ).map(
+                    (product) => {
+
+                        const latest =
+                            latestScrapes.get(
+                                product.id
+                            );
+
+
+                        return {
+
+                            id:
+                                product.id,
+
+                            storeProductId:
+                                product
+                                    .store_product_id,
+
+                            productName:
+                                product
+                                    .product_name,
+
+                            productUrl:
+                                product
+                                    .product_url,
+
+                            selectedOption:
+                                product
+                                    .selected_option,
+
+                            active:
+                                product
+                                    .active,
+
+                            latestPrice:
+                                latest
+                                    ? latest.price
+                                    : null,
+
+                            latestStock:
+                                latest
+                                    ? latest.stock
+                                    : null,
+
+                            lastScrapedAt:
+                                latest
+                                    ? latest
+                                        .attempted_at
+                                    : null
+
+                        };
+
+                    }
+                );
+
+
+            return res.json({
+
+                success:
+                    true,
+
+                count:
+                    result.length,
+
+                products:
+                    result
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "GET PRODUCTS ERROR:",
+                error
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to load tracked products",
+
+                    error:
+                        error.message
+
+                });
+
+        }
+
+    }
+);
+
+
+// =====================================================
+// GET PRODUCT PRICE HISTORY
 // =====================================================
 
 app.get(
@@ -224,73 +457,106 @@ app.get(
 
 
             const {
-                data: product,
-                error: productError
-            } = await supabase
-                .from("tracked_products")
-                .select("*")
-                .eq("id", productId)
-                .single();
+                data:
+                    product,
+                error:
+                    productError
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*")
+                    .eq(
+                        "id",
+                        productId
+                    )
+                    .single();
 
 
-            if (productError || !product) {
+            if (
+                productError ||
+                !product
+            ) {
 
-                return res.status(404).json({
-                    success: false,
-                    message:
-                        "Tracked product not found"
-                });
+                return res
+                    .status(404)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "Tracked product not found"
+
+                    });
 
             }
 
 
             const {
-                data: history,
-                error: historyError
-            } = await supabase
-                .from("scrape_history")
-                .select("*")
-                .eq(
-                    "tracked_product_id",
-                    productId
-                )
-                .eq(
-                    "outcome",
-                    "success"
-                )
-                .order(
-                    "attempted_at",
-                    {
-                        ascending: true
-                    }
-                );
+                data:
+                    history,
+                error:
+                    historyError
+            } =
+                await supabase
+                    .from(
+                        "scrape_history"
+                    )
+                    .select("*")
+                    .eq(
+                        "tracked_product_id",
+                        productId
+                    )
+                    .eq(
+                        "outcome",
+                        "success"
+                    )
+                    .order(
+                        "attempted_at",
+                        {
+                            ascending:
+                                true
+                        }
+                    );
 
 
-            if (historyError) {
+            if (
+                historyError
+            ) {
                 throw historyError;
             }
 
 
             const formattedHistory =
-                history.map((item) => ({
+                (
+                    history ||
+                    []
+                ).map(
+                    (item) => ({
 
-                    id: item.id,
+                        id:
+                            item.id,
 
-                    price:
-                        item.price,
+                        price:
+                            item.price,
 
-                    stock:
-                        item.stock,
+                        stock:
+                            item.stock,
 
-                    attemptedAt:
-                        item.attempted_at
+                        attemptedAt:
+                            item
+                                .attempted_at
 
-                }));
+                    })
+                );
 
 
             return res.json({
 
-                success: true,
+                success:
+                    true,
 
                 product: {
 
@@ -298,13 +564,16 @@ app.get(
                         product.id,
 
                     storeProductId:
-                        product.store_product_id,
+                        product
+                            .store_product_id,
 
                     productName:
-                        product.product_name,
+                        product
+                            .product_name,
 
                     selectedOption:
-                        product.selected_option,
+                        product
+                            .selected_option,
 
                     active:
                         product.active
@@ -312,12 +581,14 @@ app.get(
                 },
 
                 count:
-                    formattedHistory.length,
+                    formattedHistory
+                        .length,
 
                 history:
                     formattedHistory
 
             });
+
 
         } catch (error) {
 
@@ -326,13 +597,21 @@ app.get(
                 error
             );
 
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Failed to load product history",
-                error:
-                    error.message
-            });
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to load product history",
+
+                    error:
+                        error.message
+
+                });
 
         }
 
@@ -341,198 +620,424 @@ app.get(
 
 
 // =====================================================
-// API: TRACK NEW PRODUCT
+// GET PER-PRODUCT SCRAPE LOG
+// =====================================================
+//
+// Includes every stored scrape attempt:
+// success / retry / failure
+//
 // =====================================================
 
-app.post("/api/products", async (req, res) => {
+app.get(
+    "/api/products/:id/logs",
+    async (req, res) => {
 
-    try {
+        try {
 
-        const {
-            storeProductId,
-            productName,
-            productUrl,
-            selectedOption
-        } = req.body;
+            const productId =
+                req.params.id;
 
 
-        if (
-            !storeProductId ||
-            !productName ||
-            !productUrl ||
-            !selectedOption
-        ) {
+            const {
+                data:
+                    product,
+                error:
+                    productError
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*")
+                    .eq(
+                        "id",
+                        productId
+                    )
+                    .single();
 
-            return res.status(400).json({
-                success: false,
-                message:
-                    "storeProductId, productName, productUrl and selectedOption are required"
+
+            if (
+                productError ||
+                !product
+            ) {
+
+                return res
+                    .status(404)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "Tracked product not found"
+
+                    });
+
+            }
+
+
+            const {
+                data:
+                    logs,
+                error:
+                    logsError
+            } =
+                await supabase
+                    .from(
+                        "scrape_history"
+                    )
+                    .select("*")
+                    .eq(
+                        "tracked_product_id",
+                        productId
+                    )
+                    .order(
+                        "attempted_at",
+                        {
+                            ascending:
+                                false
+                        }
+                    );
+
+
+            if (
+                logsError
+            ) {
+                throw logsError;
+            }
+
+
+            const formattedLogs =
+                (
+                    logs ||
+                    []
+                ).map(
+                    (item) => ({
+
+                        id:
+                            item.id,
+
+                        attempt:
+                            item
+                                .attempt_number,
+
+                        outcome:
+                            item.outcome,
+
+                        price:
+                            item.price,
+
+                        stock:
+                            item.stock,
+
+                        error:
+                            item.error ||
+                            item.error_message ||
+                            null,
+
+                        attemptedAt:
+                            item
+                                .attempted_at
+
+                    })
+                );
+
+
+            return res.json({
+
+                success:
+                    true,
+
+                product: {
+
+                    id:
+                        product.id,
+
+                    productName:
+                        product
+                            .product_name,
+
+                    selectedOption:
+                        product
+                            .selected_option
+
+                },
+
+                count:
+                    formattedLogs
+                        .length,
+
+                logs:
+                    formattedLogs
+
             });
 
-        }
 
+        } catch (error) {
 
-        // Check duplicate
-        const {
-            data: existing,
-            error: existingError
-        } = await supabase
-            .from("tracked_products")
-            .select("*")
-            .eq(
-                "store_product_id",
-                storeProductId
-            )
-            .eq(
-                "selected_option",
-                selectedOption
+            console.error(
+                "GET SCRAPE LOG ERROR:",
+                error
             );
 
 
-        if (existingError) {
-            throw existingError;
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to load scrape log",
+
+                    error:
+                        error.message
+
+                });
+
         }
-
-
-        if (
-            existing &&
-            existing.length > 0
-        ) {
-
-            return res.status(409).json({
-                success: false,
-                message:
-                    "This product and option are already being tracked"
-            });
-
-        }
-
-
-        // Insert into tracked_products
-        const {
-            data,
-            error
-        } = await supabase
-            .from("tracked_products")
-            .insert({
-
-                store_product_id:
-                    storeProductId,
-
-                product_name:
-                    productName,
-
-                product_url:
-                    productUrl,
-
-                selected_option:
-                    selectedOption,
-
-                active: true
-
-            })
-            .select()
-            .single();
-
-
-        if (error) {
-            throw error;
-        }
-
-
-        // =================================================
-        // AUTOMATIC INITIAL SCRAPE
-        // =================================================
-        //
-        // Do not await this.
-        // API returns immediately while Playwright
-        // scrapes the new product in background.
-        // =================================================
-
-        console.log(
-            `\nINITIAL SCRAPE STARTED: ${data.product_name}`
-        );
-
-
-        scrapeTrackedProduct(data)
-
-            .then((result) => {
-
-                if (result.success) {
-
-                    console.log(
-                        `INITIAL SCRAPE SUCCESS: ${data.product_name}`
-                    );
-
-                    console.log(
-                        `Price: ${result.data?.priceText}`
-                    );
-
-                    console.log(
-                        `Stock: ${result.data?.stock}`
-                    );
-
-                } else {
-
-                    console.error(
-                        `INITIAL SCRAPE FAILED: ${data.product_name}`
-                    );
-
-                    console.error(
-                        result.error
-                    );
-
-                }
-
-            })
-
-            .catch((scrapeError) => {
-
-                console.error(
-                    `INITIAL SCRAPE ERROR: ${data.product_name}`,
-                    scrapeError
-                );
-
-            });
-
-
-        return res.status(201).json({
-
-            success: true,
-
-            message:
-                "Product added successfully. Initial price scrape started.",
-
-            initialScrapeStarted:
-                true,
-
-            product:
-                data
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "ADD PRODUCT ERROR:",
-            error
-        );
-
-        return res.status(500).json({
-            success: false,
-            message:
-                "Failed to add product",
-            error:
-                error.message
-        });
 
     }
-
-});
+);
 
 
 // =====================================================
-// API: ACTIVATE / DEACTIVATE PRODUCT
+// TRACK NEW PRODUCT
+// =====================================================
+
+app.post(
+    "/api/products",
+    async (req, res) => {
+
+        try {
+
+            const {
+
+                storeProductId,
+
+                productName,
+
+                productUrl,
+
+                selectedOption
+
+            } = req.body;
+
+
+            if (
+                !storeProductId ||
+                !productName ||
+                !productUrl ||
+                !selectedOption
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "storeProductId, productName, productUrl and selectedOption are required"
+
+                    });
+
+            }
+
+
+            const {
+                data:
+                    existing,
+
+                error:
+                    existingError
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*")
+                    .eq(
+                        "store_product_id",
+                        storeProductId
+                    )
+                    .eq(
+                        "selected_option",
+                        selectedOption
+                    );
+
+
+            if (
+                existingError
+            ) {
+                throw existingError;
+            }
+
+
+            if (
+                Array.isArray(
+                    existing
+                ) &&
+                existing.length > 0
+            ) {
+
+                return res
+                    .status(409)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "This product and option are already being tracked"
+
+                    });
+
+            }
+
+
+            const {
+                data,
+                error
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .insert({
+
+                        store_product_id:
+                            storeProductId,
+
+                        product_name:
+                            productName,
+
+                        product_url:
+                            productUrl,
+
+                        selected_option:
+                            selectedOption,
+
+                        active:
+                            true
+
+                    })
+                    .select()
+                    .single();
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            console.log(
+                `\nINITIAL SCRAPE STARTED: ${data.product_name}`
+            );
+
+
+            scrapeTrackedProduct(
+                data
+            )
+
+                .then(
+                    (result) => {
+
+                        if (
+                            result.success
+                        ) {
+
+                            console.log(
+                                `INITIAL SCRAPE SUCCESS: ${data.product_name}`
+                            );
+
+                            console.log(
+                                `Price: ${result.data?.priceText}`
+                            );
+
+                            console.log(
+                                `Stock: ${result.data?.stock}`
+                            );
+
+                        } else {
+
+                            console.error(
+                                `INITIAL SCRAPE FAILED: ${data.product_name}`
+                            );
+
+                            console.error(
+                                result.error
+                            );
+
+                        }
+
+                    }
+                )
+
+                .catch(
+                    (error) => {
+
+                        console.error(
+                            `INITIAL SCRAPE ERROR: ${data.product_name}`,
+                            error
+                        );
+
+                    }
+                );
+
+
+            return res
+                .status(201)
+                .json({
+
+                    success:
+                        true,
+
+                    message:
+                        "Product added successfully. Initial scrape started.",
+
+                    initialScrapeStarted:
+                        true,
+
+                    product:
+                        data
+
+                });
+
+
+        } catch (error) {
+
+            console.error(
+                "ADD PRODUCT ERROR:",
+                error
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to add product",
+
+                    error:
+                        error.message
+
+                });
+
+        }
+
+    }
+);
+
+
+// =====================================================
+// ENABLE / DISABLE PRODUCT
 // =====================================================
 
 app.patch(
@@ -544,6 +1049,7 @@ app.patch(
             const productId =
                 req.params.id;
 
+
             const {
                 active
             } = req.body;
@@ -554,11 +1060,17 @@ app.patch(
                 "boolean"
             ) {
 
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "active must be true or false"
-                });
+                return res
+                    .status(400)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "active must be true or false"
+
+                    });
 
             }
 
@@ -566,17 +1078,20 @@ app.patch(
             const {
                 data,
                 error
-            } = await supabase
-                .from("tracked_products")
-                .update({
-                    active: active
-                })
-                .eq(
-                    "id",
-                    productId
-                )
-                .select()
-                .single();
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .update({
+                        active
+                    })
+                    .eq(
+                        "id",
+                        productId
+                    )
+                    .select()
+                    .single();
 
 
             if (error) {
@@ -586,16 +1101,19 @@ app.patch(
 
             return res.json({
 
-                success: true,
+                success:
+                    true,
 
-                message: active
-                    ? "Product tracking activated"
-                    : "Product tracking deactivated",
+                message:
+                    active
+                        ? "Product tracking activated"
+                        : "Product tracking deactivated",
 
                 product:
                     data
 
             });
+
 
         } catch (error) {
 
@@ -604,13 +1122,21 @@ app.patch(
                 error
             );
 
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Failed to update product",
-                error:
-                    error.message
-            });
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to update product",
+
+                    error:
+                        error.message
+
+                });
 
         }
 
@@ -619,7 +1145,7 @@ app.patch(
 
 
 // =====================================================
-// API: EXPORT PRODUCT HISTORY AS CSV
+// CSV EXPORT
 // =====================================================
 
 app.get(
@@ -633,16 +1159,22 @@ app.get(
 
 
             const {
-                data: product,
-                error: productError
-            } = await supabase
-                .from("tracked_products")
-                .select("*")
-                .eq(
-                    "id",
-                    productId
-                )
-                .single();
+                data:
+                    product,
+
+                error:
+                    productError
+            } =
+                await supabase
+                    .from(
+                        "tracked_products"
+                    )
+                    .select("*")
+                    .eq(
+                        "id",
+                        productId
+                    )
+                    .single();
 
 
             if (
@@ -650,60 +1182,75 @@ app.get(
                 !product
             ) {
 
-                return res.status(404).json({
-                    success: false,
-                    message:
-                        "Tracked product not found"
-                });
+                return res
+                    .status(404)
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "Tracked product not found"
+
+                    });
 
             }
 
 
             const {
-                data: history,
-                error: historyError
-            } = await supabase
-                .from("scrape_history")
-                .select("*")
-                .eq(
-                    "tracked_product_id",
-                    productId
-                )
-                .order(
-                    "attempted_at",
-                    {
-                        ascending: true
-                    }
-                );
+                data:
+                    history,
+
+                error:
+                    historyError
+            } =
+                await supabase
+                    .from(
+                        "scrape_history"
+                    )
+                    .select("*")
+                    .eq(
+                        "tracked_product_id",
+                        productId
+                    )
+                    .order(
+                        "attempted_at",
+                        {
+                            ascending:
+                                true
+                        }
+                    );
 
 
-            if (historyError) {
+            if (
+                historyError
+            ) {
                 throw historyError;
             }
 
 
-            const escapeCsv = (value) => {
+            const escapeCsv =
+                (value) => {
 
-                if (
-                    value === null ||
-                    value === undefined
-                ) {
+                    if (
+                        value === null ||
+                        value ===
+                            undefined
+                    ) {
 
-                    return "";
+                        return "";
 
-                }
-
-
-                const text =
-                    String(value)
-                        .replace(
-                            /"/g,
-                            '""'
-                        );
+                    }
 
 
-                return `"${text}"`;
-            };
+                    return `"${String(
+                        value
+                    ).replace(
+                        /"/g,
+                        '""'
+                    )}"`;
+
+                };
 
 
             const rows = [
@@ -722,16 +1269,21 @@ app.get(
 
 
             for (
-                const item of history
+                const item
+                of history ||
+                []
             ) {
 
                 rows.push([
 
-                    item.attempted_at,
+                    item
+                        .attempted_at,
 
-                    product.product_name,
+                    product
+                        .product_name,
 
-                    product.selected_option,
+                    product
+                        .selected_option,
 
                     item.price,
 
@@ -739,7 +1291,8 @@ app.get(
 
                     item.outcome,
 
-                    item.attempt_number
+                    item
+                        .attempt_number
 
                 ]);
 
@@ -760,7 +1313,8 @@ app.get(
 
 
             const safeName =
-                product.product_name
+                product
+                    .product_name
                     .replace(
                         /[^a-z0-9]/gi,
                         "_"
@@ -780,7 +1334,10 @@ app.get(
             );
 
 
-            return res.send(csv);
+            return res.send(
+                csv
+            );
+
 
         } catch (error) {
 
@@ -789,13 +1346,21 @@ app.get(
                 error
             );
 
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Failed to export history",
-                error:
-                    error.message
-            });
+
+            return res
+                .status(500)
+                .json({
+
+                    success:
+                        false,
+
+                    message:
+                        "Failed to export history",
+
+                    error:
+                        error.message
+
+                });
 
         }
 
@@ -804,15 +1369,12 @@ app.get(
 
 
 // =====================================================
-// PREVENT MULTIPLE CRON JOBS
+// CRON
 // =====================================================
 
-let scrapeJobRunning = false;
+let scrapeJobRunning =
+    false;
 
-
-// =====================================================
-// CRON SCRAPE ENDPOINT
-// =====================================================
 
 app.get(
     "/api/scrape/cron",
@@ -826,34 +1388,46 @@ app.get(
 
         if (
             cronSecret !==
-            process.env.CRON_SECRET
+            process.env
+                .CRON_SECRET
         ) {
 
             return res
                 .status(401)
                 .json({
-                    success: false,
+
+                    success:
+                        false,
+
                     message:
                         "Unauthorized"
+
                 });
 
         }
 
 
-        if (scrapeJobRunning) {
+        if (
+            scrapeJobRunning
+        ) {
 
             return res
                 .status(409)
                 .json({
-                    success: false,
+
+                    success:
+                        false,
+
                     message:
                         "A scrape job is already running"
+
                 });
 
         }
 
 
-        scrapeJobRunning = true;
+        scrapeJobRunning =
+            true;
 
 
         console.log(
@@ -871,77 +1445,87 @@ app.get(
 
         scrapeAllTrackedProducts()
 
-            .then((results) => {
+            .then(
+                (results) => {
 
-                const successful =
-                    results.filter(
-                        (result) =>
-                            result.success
-                    ).length;
-
-
-                const failed =
-                    results.length -
-                    successful;
+                    const successful =
+                        results.filter(
+                            (result) =>
+                                result.success
+                        ).length;
 
 
-                console.log(
-                    "\nCRON SCRAPE SUMMARY"
-                );
-
-                console.log(
-                    "Total:",
-                    results.length
-                );
-
-                console.log(
-                    "Successful:",
-                    successful
-                );
-
-                console.log(
-                    "Failed:",
-                    failed
-                );
-
-            })
-
-            .catch((error) => {
-
-                console.error(
-                    "CRON SCRAPE ERROR:",
-                    error
-                );
-
-            })
-
-            .finally(() => {
-
-                scrapeJobRunning =
-                    false;
+                    const failed =
+                        results.length -
+                        successful;
 
 
-                console.log(
-                    "\n=============================="
-                );
+                    console.log(
+                        "\nCRON SCRAPE SUMMARY"
+                    );
 
-                console.log(
-                    "CRON SCRAPE FINISHED"
-                );
+                    console.log(
+                        "Total:",
+                        results.length
+                    );
 
-                console.log(
-                    "==============================\n"
-                );
+                    console.log(
+                        "Successful:",
+                        successful
+                    );
 
-            });
+                    console.log(
+                        "Failed:",
+                        failed
+                    );
+
+                }
+            )
+
+            .catch(
+                (error) => {
+
+                    console.error(
+                        "CRON SCRAPE ERROR:",
+                        error
+                    );
+
+                }
+            )
+
+            .finally(
+                () => {
+
+                    scrapeJobRunning =
+                        false;
+
+
+                    console.log(
+                        "\n=============================="
+                    );
+
+                    console.log(
+                        "CRON SCRAPE FINISHED"
+                    );
+
+                    console.log(
+                        "==============================\n"
+                    );
+
+                }
+            );
 
 
         return res
             .status(202)
             .json({
-                success: true,
+
+                success:
+                    true,
+
                 message:
                     "Scrape job started"
+
             });
 
     }
