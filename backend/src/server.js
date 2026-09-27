@@ -74,140 +74,62 @@ let scrapeJobRunning = false;
 // CRON SCRAPE ENDPOINT
 // ---------------------------------------------
 
-app.get(
-    "/api/scrape/cron",
-    async (req, res) => {
+app.get("/api/scrape/cron", (req, res) => {
+    const cronSecret = req.headers["x-cron-secret"];
 
-        // -----------------------------
-        // SECURITY CHECK
-        // -----------------------------
+    // Check secret
+    if (cronSecret !== process.env.CRON_SECRET) {
+        return res.status(401).json({
+            success: false,
+            message: "Unauthorized"
+        });
+    }
 
-        const cronSecret =
-            req.headers[
-                "x-cron-secret"
-            ];
+    // Prevent overlapping scrape jobs
+    if (scrapeJobRunning) {
+        return res.status(409).json({
+            success: false,
+            message: "A scrape job is already running"
+        });
+    }
 
+    scrapeJobRunning = true;
 
-        if (
-            !cronSecret ||
-            cronSecret !==
-                process.env.CRON_SECRET
-        ) {
+    console.log("\n==============================");
+    console.log("CRON SCRAPE STARTED");
+    console.log("==============================\n");
 
-            return res
-                .status(401)
-                .json({
+    // Start scraping in background
+    scrapeAllTrackedProducts()
+        .then((results) => {
+            const successful = results.filter(
+                (result) => result.success
+            ).length;
 
-                    success: false,
+            const failed = results.length - successful;
 
-                    message:
-                        "Unauthorized"
-
-                });
-
-        }
-
-
-        // -----------------------------
-        // PREVENT OVERLAPPING JOBS
-        // -----------------------------
-
-        if (scrapeJobRunning) {
-
-            return res
-                .status(409)
-                .json({
-
-                    success: false,
-
-                    message:
-                        "A scrape job is already running"
-
-                });
-
-        }
-
-
-        scrapeJobRunning = true;
-
-
-        try {
-
-            console.log(
-                "\nCRON SCRAPE STARTED"
-            );
-
-
-            const results =
-                await scrapeAllTrackedProducts();
-
-
-            const successful =
-                results.filter(
-                    result =>
-                        result.success
-                ).length;
-
-
-            const failed =
-                results.length -
-                successful;
-
-
-            console.log(
-                "\nCRON SCRAPE FINISHED"
-            );
-
-
-            return res.json({
-
-                success: true,
-
-                total:
-                    results.length,
-
-                successful,
-
-                failed,
-
-                results
-
-            });
-
-        }
-
-        catch (error) {
-
-            console.error(
-                "Cron scrape failed:",
-                error
-            );
-
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    message:
-                        "Cron scrape failed",
-
-                    error:
-                        error.message
-
-                });
-
-        }
-
-        finally {
-
+            console.log("\nCRON SCRAPE SUMMARY");
+            console.log("Total:", results.length);
+            console.log("Successful:", successful);
+            console.log("Failed:", failed);
+        })
+        .catch((error) => {
+            console.error("CRON SCRAPE ERROR:", error);
+        })
+        .finally(() => {
             scrapeJobRunning = false;
 
-        }
+            console.log("\n==============================");
+            console.log("CRON SCRAPE FINISHED");
+            console.log("==============================\n");
+        });
 
-    }
-);
+    // Respond immediately
+    return res.status(202).json({
+        success: true,
+        message: "Scrape job started"
+    });
+});
 
 // Start server
 app.listen(
