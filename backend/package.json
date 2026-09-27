@@ -1,0 +1,34 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js",
+  "inspect": "node src/scripts/inspect-store.js",
+  "test-product": "node src/scripts/test-product.js",
+  "test-track": "node src/scripts/test-track-product.js",
+  "test-runner": "node src/scripts/test-scrape-runner.js",
+  "inspect-network": "node src/scripts/inspect-price-network.js",
+  "inspect-item": "node src/scripts/inspect-item-api.js",
+  "inspect-scripts": "node src/scripts/inspect-page-scripts.js",
+  "inspect-price-logic": "node src/scripts/inspect-price-logic.js",
+  "inspect-quote": "node src/scripts/inspect-quote-function.js",
+  "test-all": "node src/scripts/test-scrape-all.js"
+},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

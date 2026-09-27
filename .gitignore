@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+backend/.env
+frontend/.env
+
+# Build output
+dist/
+frontend/dist/
+
+# Logs
+*.log
+
+# Debug / inspection files
+backend/item-2910.json
+backend/interesting-scripts.txt
+backend/price-logic-snippets.txt
+backend/quote-function-snippet.txt
+
+# OS files
+.DS_Store
+Thumbs.db
