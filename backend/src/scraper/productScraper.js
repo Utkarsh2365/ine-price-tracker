@@ -15,23 +15,57 @@ function extractProductId(url) {
 
 
 function parsePrice(priceText) {
-    if (!priceText) {
-        throw new Error("PRICE_TEXT_EMPTY");
+    if (!priceText) return null;
+
+    // Remove ₹, spaces, zero-width characters, etc.
+    let cleaned = priceText
+        .replace(/[\u200B-\u200D\uFEFF\u00A0\s₹]/g, "")
+        .replace(/[^\d.,]/g, "");
+
+    const hasComma = cleaned.includes(",");
+    const hasDot = cleaned.includes(".");
+
+    // Example: 16.386,00
+    if (hasComma && hasDot) {
+        const lastComma = cleaned.lastIndexOf(",");
+        const lastDot = cleaned.lastIndexOf(".");
+
+        if (lastComma > lastDot) {
+            // European format: 16.386,00
+            cleaned = cleaned.replace(/\./g, "");
+            cleaned = cleaned.replace(",", ".");
+        } else {
+            // Format: 16,386.00
+            cleaned = cleaned.replace(/,/g, "");
+        }
     }
 
-    const cleaned = priceText
-        .replace(/,/g, "")
-        .replace(/[^\d.]/g, "");
+    // Example: 23,686 OR 16386,00
+    else if (hasComma) {
+        const parts = cleaned.split(",");
 
-    const price = Number.parseFloat(cleaned);
-
-    if (!Number.isFinite(price)) {
-        throw new Error(
-            `INVALID_PRICE: ${priceText}`
-        );
+        if (parts.length === 2 && parts[1].length === 2) {
+            // Decimal comma: 16386,00
+            cleaned = parts[0] + "." + parts[1];
+        } else {
+            // Thousands separator: 23,686
+            cleaned = cleaned.replace(/,/g, "");
+        }
     }
 
-    return price;
+    // Example: 16.386 OR 16386.00
+    else if (hasDot) {
+        const parts = cleaned.split(".");
+
+        if (parts.length === 2 && parts[1].length === 3) {
+            // Thousands separator: 16.386
+            cleaned = cleaned.replace(".", "");
+        }
+    }
+
+    const price = Number(cleaned);
+
+    return Number.isNaN(price) ? null : price;
 }
 
 async function performPriceInteraction(
