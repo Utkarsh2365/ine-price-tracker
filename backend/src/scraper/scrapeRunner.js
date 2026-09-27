@@ -407,6 +407,4 @@ module.exports = {
 
     scrapeAllTrackedProducts,
 
-    saveScrapeAttempt
-
 };

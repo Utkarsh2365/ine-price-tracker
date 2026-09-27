@@ -10,7 +10,8 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const {
-    scrapeAllTrackedProducts
+    scrapeAllTrackedProducts,
+    scrapeTrackedProduct
 } = require("./scraper/scrapeRunner");
 
 
@@ -27,9 +28,11 @@ app.use(express.json());
 // =====================================================
 
 app.get("/", (req, res) => {
+
     res.json({
         message: "INE Price Tracker Backend is running"
     });
+
 });
 
 
@@ -38,10 +41,12 @@ app.get("/", (req, res) => {
 // =====================================================
 
 app.get("/health", (req, res) => {
+
     res.json({
         status: "ok",
         timestamp: new Date().toISOString()
     });
+
 });
 
 
@@ -50,6 +55,7 @@ app.get("/health", (req, res) => {
 // =====================================================
 
 app.get("/db-test", async (req, res) => {
+
     try {
 
         const { data, error } = await supabase
@@ -60,7 +66,7 @@ app.get("/db-test", async (req, res) => {
             throw error;
         }
 
-        res.json({
+        return res.json({
             message: "Supabase connected successfully",
             trackedProducts: data
         });
@@ -69,11 +75,13 @@ app.get("/db-test", async (req, res) => {
 
         console.error("Supabase error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             message: "Supabase connection failed",
             error: error.message
         });
+
     }
+
 });
 
 
@@ -82,9 +90,9 @@ app.get("/db-test", async (req, res) => {
 // =====================================================
 
 app.get("/api/products", async (req, res) => {
+
     try {
 
-        // Get all tracked products
         const {
             data: products,
             error: productsError
@@ -97,7 +105,6 @@ app.get("/api/products", async (req, res) => {
         }
 
 
-        // Get successful scrape history
         const {
             data: history,
             error: historyError
@@ -114,8 +121,6 @@ app.get("/api/products", async (req, res) => {
         }
 
 
-        // Store latest successful scrape
-        // for every tracked product
         const latestScrapes = new Map();
 
         for (const scrape of history) {
@@ -130,12 +135,12 @@ app.get("/api/products", async (req, res) => {
                     scrape.tracked_product_id,
                     scrape
                 );
+
             }
+
         }
 
 
-        // Combine product data with
-        // latest price and stock
         const result = products.map((product) => {
 
             const latest =
@@ -175,6 +180,7 @@ app.get("/api/products", async (req, res) => {
                         ? latest.attempted_at
                         : null
             };
+
         });
 
 
@@ -197,12 +203,14 @@ app.get("/api/products", async (req, res) => {
                 "Failed to load tracked products",
             error: error.message
         });
+
     }
+
 });
 
 
 // =====================================================
-// API: GET PRICE HISTORY FOR ONE PRODUCT
+// API: GET PRICE HISTORY
 // =====================================================
 
 app.get(
@@ -211,10 +219,10 @@ app.get(
 
         try {
 
-            const productId = req.params.id;
+            const productId =
+                req.params.id;
 
 
-            // Verify product exists
             const {
                 data: product,
                 error: productError
@@ -232,10 +240,10 @@ app.get(
                     message:
                         "Tracked product not found"
                 });
+
             }
 
 
-            // Get successful scrape history
             const {
                 data: history,
                 error: historyError
@@ -246,10 +254,16 @@ app.get(
                     "tracked_product_id",
                     productId
                 )
-                .eq("outcome", "success")
-                .order("attempted_at", {
-                    ascending: true
-                });
+                .eq(
+                    "outcome",
+                    "success"
+                )
+                .order(
+                    "attempted_at",
+                    {
+                        ascending: true
+                    }
+                );
 
 
             if (historyError) {
@@ -270,6 +284,7 @@ app.get(
 
                     attemptedAt:
                         item.attempted_at
+
                 }));
 
 
@@ -293,6 +308,7 @@ app.get(
 
                     active:
                         product.active
+
                 },
 
                 count:
@@ -300,6 +316,7 @@ app.get(
 
                 history:
                     formattedHistory
+
             });
 
         } catch (error) {
@@ -316,16 +333,19 @@ app.get(
                 error:
                     error.message
             });
+
         }
+
     }
 );
 
 
 // =====================================================
-// API: TRACK A NEW PRODUCT
+// API: TRACK NEW PRODUCT
 // =====================================================
 
 app.post("/api/products", async (req, res) => {
+
     try {
 
         const {
@@ -336,7 +356,6 @@ app.post("/api/products", async (req, res) => {
         } = req.body;
 
 
-        // Validate input
         if (
             !storeProductId ||
             !productName ||
@@ -349,11 +368,11 @@ app.post("/api/products", async (req, res) => {
                 message:
                     "storeProductId, productName, productUrl and selectedOption are required"
             });
+
         }
 
 
-        // Check if same product + option
-        // is already being tracked
+        // Check duplicate
         const {
             data: existing,
             error: existingError
@@ -375,23 +394,28 @@ app.post("/api/products", async (req, res) => {
         }
 
 
-        if (existing.length > 0) {
+        if (
+            existing &&
+            existing.length > 0
+        ) {
 
             return res.status(409).json({
                 success: false,
                 message:
                     "This product and option are already being tracked"
             });
+
         }
 
 
-        // Add product to database
+        // Insert into tracked_products
         const {
             data,
             error
         } = await supabase
             .from("tracked_products")
             .insert({
+
                 store_product_id:
                     storeProductId,
 
@@ -405,6 +429,7 @@ app.post("/api/products", async (req, res) => {
                     selectedOption,
 
                 active: true
+
             })
             .select()
             .single();
@@ -415,12 +440,75 @@ app.post("/api/products", async (req, res) => {
         }
 
 
+        // =================================================
+        // AUTOMATIC INITIAL SCRAPE
+        // =================================================
+        //
+        // Do not await this.
+        // API returns immediately while Playwright
+        // scrapes the new product in background.
+        // =================================================
+
+        console.log(
+            `\nINITIAL SCRAPE STARTED: ${data.product_name}`
+        );
+
+
+        scrapeTrackedProduct(data)
+
+            .then((result) => {
+
+                if (result.success) {
+
+                    console.log(
+                        `INITIAL SCRAPE SUCCESS: ${data.product_name}`
+                    );
+
+                    console.log(
+                        `Price: ${result.data?.priceText}`
+                    );
+
+                    console.log(
+                        `Stock: ${result.data?.stock}`
+                    );
+
+                } else {
+
+                    console.error(
+                        `INITIAL SCRAPE FAILED: ${data.product_name}`
+                    );
+
+                    console.error(
+                        result.error
+                    );
+
+                }
+
+            })
+
+            .catch((scrapeError) => {
+
+                console.error(
+                    `INITIAL SCRAPE ERROR: ${data.product_name}`,
+                    scrapeError
+                );
+
+            });
+
+
         return res.status(201).json({
+
             success: true,
+
             message:
-                "Product added successfully",
+                "Product added successfully. Initial price scrape started.",
+
+            initialScrapeStarted:
+                true,
+
             product:
                 data
+
         });
 
     } catch (error) {
@@ -437,7 +525,9 @@ app.post("/api/products", async (req, res) => {
             error:
                 error.message
         });
+
     }
+
 });
 
 
@@ -459,9 +549,9 @@ app.patch(
             } = req.body;
 
 
-            // Validate active value
             if (
-                typeof active !== "boolean"
+                typeof active !==
+                "boolean"
             ) {
 
                 return res.status(400).json({
@@ -469,6 +559,7 @@ app.patch(
                     message:
                         "active must be true or false"
                 });
+
             }
 
 
@@ -503,6 +594,7 @@ app.patch(
 
                 product:
                     data
+
             });
 
         } catch (error) {
@@ -519,122 +611,196 @@ app.patch(
                 error:
                     error.message
             });
+
         }
+
     }
 );
+
 
 // =====================================================
 // API: EXPORT PRODUCT HISTORY AS CSV
 // =====================================================
 
-app.get("/api/products/:id/export", async (req, res) => {
-    try {
-        const productId = req.params.id;
+app.get(
+    "/api/products/:id/export",
+    async (req, res) => {
 
-        const {
-            data: product,
-            error: productError
-        } = await supabase
-            .from("tracked_products")
-            .select("*")
-            .eq("id", productId)
-            .single();
+        try {
 
-        if (productError || !product) {
-            return res.status(404).json({
-                success: false,
-                message: "Tracked product not found"
-            });
-        }
+            const productId =
+                req.params.id;
 
-        const {
-            data: history,
-            error: historyError
-        } = await supabase
-            .from("scrape_history")
-            .select("*")
-            .eq("tracked_product_id", productId)
-            .order("attempted_at", {
-                ascending: true
-            });
 
-        if (historyError) {
-            throw historyError;
-        }
+            const {
+                data: product,
+                error: productError
+            } = await supabase
+                .from("tracked_products")
+                .select("*")
+                .eq(
+                    "id",
+                    productId
+                )
+                .single();
 
-        const escapeCsv = (value) => {
-            if (value === null || value === undefined) {
-                return "";
+
+            if (
+                productError ||
+                !product
+            ) {
+
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "Tracked product not found"
+                });
+
             }
 
-            const text = String(value)
-                .replace(/"/g, '""');
 
-            return `"${text}"`;
-        };
+            const {
+                data: history,
+                error: historyError
+            } = await supabase
+                .from("scrape_history")
+                .select("*")
+                .eq(
+                    "tracked_product_id",
+                    productId
+                )
+                .order(
+                    "attempted_at",
+                    {
+                        ascending: true
+                    }
+                );
 
-        const rows = [
-            [
-                "Date",
-                "Product",
-                "Selected Option",
-                "Price",
-                "Stock",
-                "Outcome",
-                "Attempt"
-            ]
-        ];
 
-        for (const item of history) {
-            rows.push([
-                item.attempted_at,
-                product.product_name,
-                product.selected_option,
-                item.price,
-                item.stock,
-                item.outcome,
-                item.attempt_number
-            ]);
+            if (historyError) {
+                throw historyError;
+            }
+
+
+            const escapeCsv = (value) => {
+
+                if (
+                    value === null ||
+                    value === undefined
+                ) {
+
+                    return "";
+
+                }
+
+
+                const text =
+                    String(value)
+                        .replace(
+                            /"/g,
+                            '""'
+                        );
+
+
+                return `"${text}"`;
+            };
+
+
+            const rows = [
+
+                [
+                    "Date",
+                    "Product",
+                    "Selected Option",
+                    "Price",
+                    "Stock",
+                    "Outcome",
+                    "Attempt"
+                ]
+
+            ];
+
+
+            for (
+                const item of history
+            ) {
+
+                rows.push([
+
+                    item.attempted_at,
+
+                    product.product_name,
+
+                    product.selected_option,
+
+                    item.price,
+
+                    item.stock,
+
+                    item.outcome,
+
+                    item.attempt_number
+
+                ]);
+
+            }
+
+
+            const csv =
+                rows
+                    .map(
+                        (row) =>
+                            row
+                                .map(
+                                    escapeCsv
+                                )
+                                .join(",")
+                    )
+                    .join("\n");
+
+
+            const safeName =
+                product.product_name
+                    .replace(
+                        /[^a-z0-9]/gi,
+                        "_"
+                    )
+                    .toLowerCase();
+
+
+            res.setHeader(
+                "Content-Type",
+                "text/csv; charset=utf-8"
+            );
+
+
+            res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="${safeName}_history.csv"`
+            );
+
+
+            return res.send(csv);
+
+        } catch (error) {
+
+            console.error(
+                "CSV EXPORT ERROR:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Failed to export history",
+                error:
+                    error.message
+            });
+
         }
 
-        const csv = rows
-            .map((row) =>
-                row
-                    .map(escapeCsv)
-                    .join(",")
-            )
-            .join("\n");
-
-        const safeName =
-            product.product_name
-                .replace(/[^a-z0-9]/gi, "_")
-                .toLowerCase();
-
-        res.setHeader(
-            "Content-Type",
-            "text/csv; charset=utf-8"
-        );
-
-        res.setHeader(
-            "Content-Disposition",
-            `attachment; filename="${safeName}_history.csv"`
-        );
-
-        return res.send(csv);
-
-    } catch (error) {
-        console.error(
-            "CSV EXPORT ERROR:",
-            error
-        );
-
-        return res.status(500).json({
-            success: false,
-            message: "Failed to export history",
-            error: error.message
-        });
     }
-});
+);
 
 
 // =====================================================
@@ -653,10 +819,11 @@ app.get(
     (req, res) => {
 
         const cronSecret =
-            req.headers["x-cron-secret"];
+            req.headers[
+                "x-cron-secret"
+            ];
 
 
-        // Check cron secret
         if (
             cronSecret !==
             process.env.CRON_SECRET
@@ -669,10 +836,10 @@ app.get(
                     message:
                         "Unauthorized"
                 });
+
         }
 
 
-        // Prevent overlapping jobs
         if (scrapeJobRunning) {
 
             return res
@@ -682,6 +849,7 @@ app.get(
                     message:
                         "A scrape job is already running"
                 });
+
         }
 
 
@@ -701,7 +869,6 @@ app.get(
         );
 
 
-        // Run scraping in background
         scrapeAllTrackedProducts()
 
             .then((results) => {
@@ -736,6 +903,7 @@ app.get(
                     "Failed:",
                     failed
                 );
+
             })
 
             .catch((error) => {
@@ -744,6 +912,7 @@ app.get(
                     "CRON SCRAPE ERROR:",
                     error
                 );
+
             })
 
             .finally(() => {
@@ -763,10 +932,10 @@ app.get(
                 console.log(
                     "==============================\n"
                 );
+
             });
 
 
-        // Respond immediately
         return res
             .status(202)
             .json({
@@ -774,6 +943,7 @@ app.get(
                 message:
                     "Scrape job started"
             });
+
     }
 );
 
@@ -790,5 +960,6 @@ app.listen(
         console.log(
             `Server running on port ${PORT}`
         );
+
     }
 );
